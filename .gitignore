@@ -1,0 +1,56 @@
+# Copyrighted or private source material
+source/
+work/
+final/
+archive/
+*.wav
+*.flac
+*.mp3
+*.m4a
+*.aac
+*.ogg
+*.opus
+*.cue
+*.lrc
+*.srt
+*.vtt
+*.ass
+*.ssa
+*.jpg
+*.jpeg
+*.png
+*.webp
+
+# Local environments, models and caches
+.venv/
+venv/
+env/
+models/
+cache/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+
+# Credentials and machine-local configuration
+.env
+.env.*
+*.key
+*.pem
+*.pfx
+*.p12
+credentials.*
+secrets.*
+
+# Logs and reports that may contain local paths
+*.log
+*_inventory.*
+*_report.*
+
+# Editor and OS files
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+desktop.ini
+
