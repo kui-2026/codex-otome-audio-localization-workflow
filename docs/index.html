@@ -69,6 +69,7 @@ footer{font-size:12px;color:var(--dim);text-align:center;margin-top:22px}
 <div id="timer"><span id="position">00:00.0</span><span class="small"> / <span id="duration">00:00</span></span></div>
 <input type="range" id="seek" min="0" max="60" step=".1" value="0" aria-label="字幕时间轴">
 <div class="grid"><button id="back5">−5秒</button><button id="back1">−1秒</button><button class="primary" id="play">▶ 开始字幕</button><button id="forward5">+5秒</button></div>
+<div class="flex" style="margin-top:12px;align-items:center"><label class="small" for="speed" style="margin:0">字幕倍速</label><select id="speed" aria-label="字幕播放倍速" style="min-width:105px;max-width:145px;padding:8px;border-radius:9px;background:#242332;color:#fff;border:1px solid #615b79"><option value="0.5">0.5×</option><option value="0.75">0.75×</option><option value="1" selected>1× 正常</option><option value="1.25">1.25×</option><option value="1.5">1.5×</option><option value="1.75">1.75×</option><option value="2">2×</option><option value="2.5">2.5×</option><option value="3">3×</option></select><span class="small">与 DLsite Sound 的播放速度保持一致</span></div>
 <div class="flex" style="margin-top:12px"><span class="small">字幕偏移 <b id="offset">0.0秒</b></span><button id="offsetMinus" class="smallbtn">−0.5秒</button><button id="offsetPlus" class="smallbtn">+0.5秒</button><button id="offsetZero" class="smallbtn">归零</button></div>
 <div class="flex" style="margin-top:10px"><span class="small">跳至</span><input id="jumpInput" style="max-width:95px" value="0:00" inputmode="decimal"><button id="jump" class="smallbtn">跳转</button></div>
 <div class="small">点击字幕行也可以直接跳转时间。</div><div id="lyrics"></div></section>
@@ -84,7 +85,7 @@ footer{font-size:12px;color:var(--dim);text-align:center;margin-top:22px}
 <script>
 (function(){'use strict';
 const $=id=>document.getElementById(id),ENC_URL='./library.enc.json',LOCAL_KEY='lrc-lib-local-v1';
-let cloud=[],local=[],selectedId=null,selectedTrack=null,playing=false,position=0,tick=0,offset=0,font=19,prevIndex=-2,raf=0,unlocked=false,enteredPassword='';
+let cloud=[],local=[],selectedId=null,selectedTrack=null,playing=false,position=0,tick=0,offset=0,font=19,rate=1,prevIndex=-2,raf=0,unlocked=false,enteredPassword='';
 const defaultCover='data:image/svg+xml;charset=utf-8,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300"><rect width="400" height="300" fill="#443c5d"/><text x="200" y="166" fill="#dbcaff" font-size="80" text-anchor="middle">♪</text></svg>');
 const msg=(id,t)=>{$(id).textContent=t};
 function b64bytes(str){let binary=atob(str),bytes=new Uint8Array(binary.length);for(let i=0;i<binary.length;i++)bytes[i]=binary.charCodeAt(i);return bytes}
@@ -104,12 +105,14 @@ function selectWork(id){selectedId=id;selectedTrack=null;pause();position=0;offs
 function parseLrc(text){let arr=[],fileOffset=0;String(text).replace(/\r/g,'').split('\n').forEach(line=>{let m=line.match(/^\[offset:\s*([-+]?\d+)\]/i);if(m){fileOffset=Number(m[1])/1000;return}let stamps=[...line.matchAll(/\[(\d+):(\d+(?:\.\d+)?)\]/g)];if(!stamps.length)return;const value=line.replace(/\[(\d+):(\d+(?:\.\d+)?)\]/g,'').replace(/<\d\d:\d\d(?:\.\d+)?>/g,'').trim();if(!value)return;stamps.forEach(x=>arr.push({time:Math.max(0,Number(x[1])*60+Number(x[2])+fileOffset),text:value}))});return arr.sort((a,b)=>a.time-b.time)}
 function selectTrack(workId,index){const w=getWork(workId),t=w?.tracks?.[index];if(!t)return;pause();selectedId=workId;selectedTrack={...t,cues:parseLrc(t.lrc)};position=0;offset=0;tick=performance.now();prevIndex=-2;$('playerPanel').style.display='block';$('playingTitle').textContent=String(t.number??index+1).padStart(2,'0')+' · '+safeText(t.title||'字幕');$('offset').textContent='0.0秒';$('play').textContent='▶ 开始字幕';const el=$('lyrics');el.replaceChildren();const fragment=document.createDocumentFragment();for(const cue of selectedTrack.cues){const line=document.createElement('div');line.className='lyric';line.textContent=cue.text;line.onclick=()=>{seekTo(Math.max(0,cue.time-offset));msg('localStatus','字幕已跳转到 '+format(cue.time,false))};fragment.append(line)}el.append(fragment);if(!selectedTrack.cues.length)el.textContent='没有识别到有效字幕时间戳';Array.from($('tracks').children).forEach((b,i)=>b.classList.toggle('active',i===index));update(true);$('playerPanel').scrollIntoView({block:'start',behavior:'smooth'})}
 function format(t,dec=true){t=Math.max(0,t);let m=Math.floor(t/60),s=t%60;return String(m).padStart(2,'0')+':'+(dec?s.toFixed(1).padStart(4,'0'):String(Math.floor(s)).padStart(2,'0'))}
-function timeNow(){return playing?position+(performance.now()-tick)/1000:position}
+function timeNow(){return playing?position+(performance.now()-tick)/1000*rate:position}
 function pause(){if(playing){position=timeNow();playing=false;cancelAnimationFrame(raf)}$('play').textContent='▶ 开始字幕'}
 function setPlay(v){if(!selectedTrack)return;if(!v){pause();return}if(playing)return;playing=true;tick=performance.now();$('play').textContent='Ⅱ 暂停字幕';loop()}
 function loop(){cancelAnimationFrame(raf);function run(){update(false);if(playing)raf=requestAnimationFrame(run)}run()}
 function seekTo(t){position=Math.max(0,t);tick=performance.now();update(true)}
 function update(force){const t=timeNow();$('position').textContent=format(t);const cues=selectedTrack?.cues||[],duration=cues.length?cues[cues.length-1].time+5:60;$('duration').textContent=format(duration,false);$('seek').max=Math.max(duration,t+1,1);$('seek').value=t;let lo=0,hi=cues.length-1,idx=-1,want=t+offset;while(lo<=hi){const mid=(lo+hi)>>1;if(cues[mid].time<=want){idx=mid;lo=mid+1}else hi=mid-1}if(force||prevIndex!==idx){const el=$('lyrics');for(const old of el.querySelectorAll('.active,.near'))old.classList.remove('active','near');if(idx>=0){const line=el.children[idx];if(line){line.classList.add('active');if(idx>0)el.children[idx-1].classList.add('near');if(idx+1<cues.length)el.children[idx+1].classList.add('near');const scroll=Math.max(0,line.offsetTop-el.offsetTop-el.clientHeight*.43);el.scrollTo({top:scroll,behavior:force?'instant':'smooth'})}}prevIndex=idx}}
+function setRate(value){const next=Number(value);if(!Number.isFinite(next)||next<0.5||next>3)return;position=timeNow();tick=performance.now();rate=next;$('speed').value=String(next);try{localStorage.setItem('lrc-lib-speed',String(next))}catch(e){}update(true)}
+$('speed').onchange=e=>setRate(e.target.value);
 $('play').onclick=()=>setPlay(!playing);$('back5').onclick=()=>seekTo(timeNow()-5);$('back1').onclick=()=>seekTo(timeNow()-1);$('forward5').onclick=()=>seekTo(timeNow()+5);$('seek').oninput=e=>seekTo(Number(e.target.value));
 function setOffset(n){offset=Math.round((offset+n)*10)/10;$('offset').textContent=(offset>0?'+':'')+offset.toFixed(1)+'秒';update(true)}
 $('offsetMinus').onclick=()=>setOffset(-.5);$('offsetPlus').onclick=()=>setOffset(.5);$('offsetZero').onclick=()=>setOffset(-offset);
@@ -127,6 +130,7 @@ let title=$('localTitle').value.trim()||records[0].album||'本地字幕',id='loc
 $('importLocal').onclick=()=>importFiles(Array.from($('localFiles').files)).catch(e=>msg('localStatus','导入出错：'+e.message));$('pasteBtn').onclick=()=>importFiles([],$('paste').value).catch(e=>msg('localStatus','导入出错：'+e.message));
 $('deleteLocal').onclick=()=>{const w=getWork(selectedId);if(!w||w.source!=='local')return;if(!confirm('删除这部作品的本地字幕？'))return;local=local.filter(x=>x.id!==w.id);selectedId=null;pause();$('workPanel').style.display='none';$('playerPanel').style.display='none';saveLocal();renderWorks();msg('localStatus','已移除本地作品')};
 loadLocal();
+try{const saved=Number(localStorage.getItem('lrc-lib-speed'));if([0.5,0.75,1,1.25,1.5,1.75,2,2.5,3].includes(saved)){rate=saved;$('speed').value=String(saved)}}catch(e){}
 })();
 </script>
 </body>
