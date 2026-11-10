@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#12131b">
+<title>LRC 纯字幕播放器</title>
+<style>
+:root{color-scheme:dark;--bg:#11121a;--card:#20212c;--text:#f4f0ff;--sub:#aaa6b9;--accent:#bda6ff}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--text);font:16px/1.55 -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif}
+header,main{max-width:760px;margin:auto;padding:16px}
+h1{font-size:24px;margin:10px 0 2px}p{color:var(--sub);margin:6px 0}
+section{background:var(--card);padding:15px;border:1px solid #38374b;border-radius:16px;margin:12px 0}
+button,select,input,textarea{font:inherit}
+button{background:#383447;color:white;border:1px solid #605a75;border-radius:10px;padding:9px 12px;min-height:43px;cursor:pointer}
+button.primary{background:var(--accent);color:#20172e;font-weight:700}
+button:active{filter:brightness(1.13)}
+.row{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:7px}
+.grid button{padding:9px 2px;font-size:13px}
+label,small{color:var(--sub);font-size:13px}
+label{display:block;margin-bottom:5px}
+#files{width:100%;margin:8px 0 12px}
+select,input[type=text],textarea{color:white;background:#151620;border:1px solid #595770;border-radius:8px;padding:9px}
+select{flex:1;min-width:110px;max-width:100%}
+textarea{width:100%;min-height:100px}
+#time{font-size:25px;text-align:center;font-weight:700;font-variant-numeric:tabular-nums}
+#seek{width:100%;accent-color:var(--accent)}
+#lyrics{max-height:50vh;min-height:210px;overflow:auto;scroll-behavior:smooth;scroll-padding-block:44%;margin-top:14px}
+.line{color:#9895ab;padding:12px 8px;text-align:center;border-radius:10px;line-height:1.6;font-size:var(--font,19px)}
+.line.active{background:#514466;color:#fff;font-weight:700}
+.line.near{color:#c8bedc}
+#msg{min-height:22px;color:#d7c6ff}
+footer{max-width:760px;color:var(--sub);padding:0 16px 28px;margin:auto;font-size:12px}
+@media(max-width:420px){header,main{padding:12px}button{font-size:13px}}
+</style>
+</head>
+<body>
+<header><h1>♪ 纯字幕播放器</h1><p>DLsite Sound 继续听音频、记录播放数据。这里仅滚动 LRC 字幕，不读取或播放音频。</p></header>
+<main>
+<section>
+<label for="files">导入 LRC 文件（可以一次选择多轨）</label>
+<input type="file" id="files" accept=".lrc,.txt,text/plain" multiple>
+<div class="row">
+<select id="track" aria-label="字幕音轨"><option value="">请先导入字幕</option></select>
+<button id="remove">清除当前</button>
+</div>
+<details style="margin-top:12px"><summary style="color:var(--accent);cursor:pointer">或者直接粘贴 LRC 文本</summary>
+<textarea id="paste" placeholder="[00:00.00]第一句字幕&#10;[00:03.50]第二句字幕"></textarea>
+<button id="add">添加字幕</button></details>
+<p id="msg" role="status">字幕只保存在此浏览器的本地存储中，不会上传到 GitHub。</p>
+</section>
+<section>
+<div id="time"><span id="current">00:00.0</span> <small>/ <span id="duration">00:00</span></small></div>
+<input type="range" id="seek" min="0" max="100" step="0.1" value="0" aria-label="字幕时间轴">
+<div class="grid" style="margin-top:12px">
+<button id="b5">−5秒</button><button id="b1">−1秒</button>
+<button class="primary" id="play">▶ 开始字幕</button><button id="f5">+5秒</button>
+</div>
+<div class="row" style="margin-top:12px"><small>字幕偏差 <b id="offsetView">0.0秒</b></small>
+<button id="moff">−0.5秒</button><button id="poff">+0.5秒</button><button id="zero">归零</button></div>
+<div class="row" style="margin-top:9px">
+<small>跳到播放时间（分:秒）</small>
+<input id="jumpTime" type="text" inputmode="decimal" value="0:00" style="width:90px">
+<button id="jump">跳转</button></div>
+</section>
+<section>
+<div class="row" style="justify-content:space-between">
+<strong>字幕 <small id="count"></small></strong>
+<div class="row"><button id="smaller">A−</button><button id="larger">A+</button></div></div>
+<div id="lyrics"><div class="line">导入 LRC 后，字幕显示在这里。</div></div>
+</section>
+</main>
+<footer>先在 DLsite Sound 播音频，再回到这里点「开始字幕」。点击任意字幕行、移动时间轴或使用跳转按钮均可手动对齐。DLsite Sound 暂停、拖动或切轨时，字幕不会自动跟随，需要手动调整。</footer>
+<script>
+(function(){
+"use strict";
+var KEY="lrc-only-viewer-v2", $=function(id){return document.getElementById(id)};
+var tracks={},currentTrack="",position=0,startedAt=0,playing=false,shift=0,size=19,last=-1,frame=0;
+function format(sec,decimal){sec=Math.max(0,sec);var m=Math.floor(sec/60),s=sec%60;return String(m).padStart(2,"0")+":"+(decimal?s.toFixed(1).padStart(4,"0"):String(Math.floor(s)).padStart(2,"0"))}
+function clock(){return playing?position+(performance.now()-startedAt)/1000:position}
+function seekTo(t){position=Math.max(0,t);startedAt=performance.now();update(true)}
+function pauseOrPlay(v){if(playing===v)return;position=clock();startedAt=performance.now();playing=v;$("play").textContent=playing?"Ⅱ 暂停字幕":"▶ 开始字幕";if(playing)loop()}
+function loop(){cancelAnimationFrame(frame);function render(){update(false);if(playing)frame=requestAnimationFrame(render)}render()}
+function parseLrc(text){var cues=[],fileOffset=0;String(text).replace(/\r/g,"").split("\n").forEach(function(line){var off=line.match(/^\[offset:\s*([-+]?\d+)\]/i);if(off){fileOffset=Number(off[1])/1000;return}
+var tags=[...line.matchAll(/\[(\d+):(\d+(?:\.\d+)?)\]/g)];if(!tags.length)return;
+var value=line.replace(/\[(\d+):(\d+(?:\.\d+)?)\]/g,"").replace(/<\d\d:\d\d(?:\.\d+)?>/g,"").trim();if(!value)return;
+tags.forEach(function(x){cues.push({time:Math.max(0,Number(x[1])*60+Number(x[2])+fileOffset),text:value})})
+});return cues.sort(function(a,b){return a.time-b.time})}
+function save(){try{localStorage.setItem(KEY,JSON.stringify({tracks:tracks,active:currentTrack,size:size}))}catch(e){$("msg").textContent="已导入，但浏览器本地空间不足，无法保存全部字幕。"}}
+function setupTracks(){var sel=$("track"),names=Object.keys(tracks);sel.replaceChildren();if(!names.length){currentTrack="";sel.add(new Option("请先导入字幕",""))}else{if(!tracks[currentTrack])currentTrack=names[0];names.forEach(function(n){sel.add(new Option(n+"（"+tracks[n].length+"句）",n))});sel.value=currentTrack}
+$("count").textContent=names.length&&tracks[currentTrack]?tracks[currentTrack].length+"句":"0句";lines()}
+function lines(){var list=tracks[currentTrack]||[],parent=$("lyrics");parent.replaceChildren();if(!list.length){var d=document.createElement("div");d.className="line";d.textContent="暂无字幕";parent.append(d)}else{var fragment=document.createDocumentFragment();
+list.forEach(function(c){var d=document.createElement("div");d.className="line";d.textContent=c.text;d.title=format(c.time,false)+"（点按以校准）";d.onclick=function(){seekTo(Math.max(0,c.time-shift));$("msg").textContent="已对齐到 "+format(c.time,false)};fragment.append(d)});
+parent.append(fragment)}last=-1;update(true)}
+function update(force){var t=clock(),list=tracks[currentTrack]||[],dur=list.length?list[list.length-1].time+5:0;
+$("current").textContent=format(t,true);$("duration").textContent=format(dur,false);$("seek").max=Math.max(dur,t+1,1);$("seek").value=Math.min(t,Number($("seek").max));
+var wanted=t+shift,lo=0,hi=list.length-1,found=-1;
+while(lo<=hi){var mid=Math.floor((lo+hi)/2);if(list[mid].time<=wanted){found=mid;lo=mid+1}else hi=mid-1}
+if(found!==last||force){var parent=$("lyrics");parent.querySelectorAll(".active,.near").forEach(function(el){el.classList.remove("active","near")});
+if(found>=0){var element=parent.children[found];if(element){element.classList.add("active");if(found>0)parent.children[found-1].classList.add("near");if(found+1<list.length)parent.children[found+1].classList.add("near");element.scrollIntoView({block:"center",behavior:force?"instant":"smooth"})}}
+last=found}}
+async function readFile(f){var text=await f.text(),cues=parseLrc(text);if(!cues.length){$("msg").textContent="未识别到时间戳："+f.name;return}
+tracks[f.name]=cues;currentTrack=f.name;pauseOrPlay(false);seekTo(0);setupTracks();save();$("msg").textContent="已导入 "+f.name+"，"+cues.length+"句"}
+$("files").onchange=async function(e){for(const file of e.target.files)await readFile(file);e.target.value=""};
+$("add").onclick=function(){var cues=parseLrc($("paste").value);if(!cues.length){$("msg").textContent="没有识别到有效时间戳";return}
+var name="粘贴字幕 "+new Date().toLocaleTimeString("zh-CN")+".lrc";tracks[name]=cues;currentTrack=name;pauseOrPlay(false);seekTo(0);setupTracks();save();$("msg").textContent="已添加 "+cues.length+"句"};
+$("track").onchange=function(){currentTrack=$("track").value;pauseOrPlay(false);seekTo(0);setupTracks();save()};
+$("remove").onclick=function(){if(!currentTrack)return;delete tracks[currentTrack];currentTrack=Object.keys(tracks)[0]||"";pauseOrPlay(false);seekTo(0);setupTracks();save()};
+$("play").onclick=function(){pauseOrPlay(!playing)};
+$("b5").onclick=function(){seekTo(clock()-5)};$("b1").onclick=function(){seekTo(clock()-1)};$("f5").onclick=function(){seekTo(clock()+5)};
+$("seek").oninput=function(e){seekTo(Number(e.target.value))};
+function offset(delta){shift=Math.round((shift+delta)*10)/10;$("offsetView").textContent=(shift>0?"+":"")+shift.toFixed(1)+"秒";update(true)}
+$("moff").onclick=function(){offset(-.5)};$("poff").onclick=function(){offset(.5)};$("zero").onclick=function(){offset(-shift)};
+$("jump").onclick=function(){var v=$("jumpTime").value.trim(),parts=v.split(":").map(Number),t=parts.length===2?parts[0]*60+parts[1]:Number(v);if(Number.isFinite(t)&&t>=0)seekTo(t)};
+$("jumpTime").onkeydown=function(e){if(e.key==="Enter")$("jump").click()};
+function font(change){size=Math.min(34,Math.max(13,size+change));document.documentElement.style.setProperty("--font",size+"px");save()}
+$("smaller").onclick=function(){font(-2)};$("larger").onclick=function(){font(2)};
+try{var data=JSON.parse(localStorage.getItem(KEY)||"{}");if(data.tracks&&typeof data.tracks==="object")tracks=data.tracks;if(typeof data.active==="string")currentTrack=data.active;if(Number.isFinite(data.size))size=data.size}catch(e){}
+font(0);setupTracks();
+})();
+</script>
+</body>
+</html>
